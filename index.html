@@ -1,0 +1,65 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebRTC Video Stream</title>
+</head>
+<body>
+  <h1>WebRTC Video Stream</h1>
+  <video id="localVideo" autoplay playsinline></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    // Access camera and stream to local video element
+    navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+      localVideo.srcObject = stream;
+      stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+    });
+
+    // Handle incoming offer
+    socket.on('offer', (offer) => {
+      peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      peerConnection.createAnswer().then((answer) => {
+        peerConnection.setLocalDescription(answer);
+        socket.emit('answer', answer);
+      });
+    });
+
+    // Handle incoming answer
+    socket.on('answer', (answer) => {
+      peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    // Handle ICE candidates
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('ice-candidate', event.candidate);
+      }
+    };
+
+    socket.on('ice-candidate', (candidate) => {
+      peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+
+    // Stream remote video
+    peerConnection.ontrack = (event) => {
+      remoteVideo.srcObject = event.streams[0];
+    };
+
+    // Create an SDP offer and send to signaling server
+    peerConnection.createOffer().then((offer) => {
+      peerConnection.setLocalDescription(offer);
+      socket.emit('offer', offer);
+    });
+  </script>
+</body>
+</html>
